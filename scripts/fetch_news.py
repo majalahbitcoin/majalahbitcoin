@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+    # Using gemini-1.5-flash as it's more likely to be available and faster for translation
     model = genai.GenerativeModel("gemini-1.5-flash")
 else:
     print("GEMINI_API_KEY not set. Translation will be skipped.")
@@ -38,7 +39,7 @@ def translate_text(text, target_language="Malay"):
         print(f"Error translating text: {e}")
         return text
 
-def extract_main_content(html_content):
+def extract_main_content_plain(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     # Attempt to find common article content containers
     article_body = soup.find('div', class_='article-body') or \
@@ -50,7 +51,8 @@ def extract_main_content(html_content):
         # Remove script, style, and other non-content tags
         for unwanted_tag in article_body(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form']):
             unwanted_tag.decompose()
-        return str(article_body)
+        # Extract plain text
+        return article_body.get_text(separator=' ', strip=True)
     return None
 
 def fetch_and_process_news():
@@ -102,22 +104,23 @@ def fetch_and_process_news():
                 if not image_url:
                     image_url = "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?auto=format&fit=crop&w=800&q=80"
 
-                full_content_html = ""
+                full_content_plain = ""
                 if link and link != '#':
                     try:
                         response = requests.get(link, timeout=10)
                         response.raise_for_status()
-                        full_content_html = extract_main_content(response.text) or summary
+                        full_content_plain = extract_main_content_plain(response.text) or summary
                     except requests.exceptions.RequestException as e:
                         print(f"Could not fetch full content for {link}: {e}")
-                        full_content_html = summary
+                        full_content_plain = summary
                 else:
-                    full_content_html = summary
+                    full_content_plain = summary
 
                 # Translate
                 translated_title = translate_text(title)
                 translated_summary = translate_text(summary)
-                translated_content = translate_text(full_content_html) # Translate the extracted full content or summary
+                # Wrap translated plain text content in <p> tags for display
+                translated_content = f"<p>{translate_text(full_content_plain)}</p>"
 
                 article_data = {
                     "id": article_id,
