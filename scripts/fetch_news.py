@@ -6,12 +6,12 @@ import datetime
 import requests
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted, InvalidArgument, NotFound
+from bs4 import BeautifulSoup
 
 # Configure Gemini API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using gemini-1.5-flash as it's more likely to be available and faster for translation
     model = genai.GenerativeModel("gemini-1.5-flash")
 else:
     print("GEMINI_API_KEY not set. Translation will be skipped.")
@@ -19,6 +19,7 @@ else:
 
 RSS_FEEDS = [
     "https://bitcoinmagazine.com/feed",
+    # Add more free Bitcoin RSS feeds here
 ]
 
 OUTPUT_DIR = "./data"
@@ -36,6 +37,21 @@ def translate_text(text, target_language="Malay"):
     except (ResourceExhausted, InvalidArgument, NotFound, Exception) as e:
         print(f"Error translating text: {e}")
         return text
+
+def extract_main_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    # Attempt to find common article content containers
+    article_body = soup.find('div', class_='article-body') or \
+                   soup.find('div', class_='entry-content') or \
+                   soup.find('article') or \
+                   soup.find('main')
+    
+    if article_body:
+        # Remove script, style, and other non-content tags
+        for unwanted_tag in article_body(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form']):
+            unwanted_tag.decompose()
+        return str(article_body)
+    return None
 
 def fetch_and_process_news():
     all_articles = []
@@ -79,17 +95,29 @@ def fetch_and_process_news():
                             break
                 if not image_url and hasattr(entry, 'description'):
                     import re
-                    match = re.search(r'<img[^>]+src=["\"]([^"\"]+)["\"]', entry.description)
+                    match = re.search(r'<img[^>]+src=[""]([^""]+)[""]', entry.description)
                     if match: 
                         image_url = match.group(1)
                 
                 if not image_url:
                     image_url = "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?auto=format&fit=crop&w=800&q=80"
 
+                full_content_html = ""
+                if link and link != '#':
+                    try:
+                        response = requests.get(link, timeout=10)
+                        response.raise_for_status()
+                        full_content_html = extract_main_content(response.text) or summary
+                    except requests.exceptions.RequestException as e:
+                        print(f"Could not fetch full content for {link}: {e}")
+                        full_content_html = summary
+                else:
+                    full_content_html = summary
+
                 # Translate
                 translated_title = translate_text(title)
                 translated_summary = translate_text(summary)
-                translated_content = translate_text(summary) # Use summary as content for now
+                translated_content = translate_text(full_content_html) # Translate the extracted full content or summary
 
                 article_data = {
                     "id": article_id,

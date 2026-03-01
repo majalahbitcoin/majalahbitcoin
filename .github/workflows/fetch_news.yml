@@ -24,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install feedparser requests google-generativeai
+        pip install feedparser requests google-generativeai beautifulsoup4
 
     - name: Fetch and translate news
       env:
